@@ -10,17 +10,17 @@
 
 | Mục | Nội dung |
 |-----|----------|
-| Họ và tên | (điền họ tên) |
-| Mã học viên | (điền mã học viên) |
-| Repo | (điền link repo K4-L3A-DAY12-HoVaTen-MSSV-CloudServicesAndDeployment) |
+| Họ và tên | Nguyễn Khắc Quang |
+| Mã học viên | 2A202602885 |
+| Repo | https://github.com/Quang180204/K4-L3A-DAY12-NguyenKhacQuang-2A202602885-Cloud-Service-And-Deployment |
 
 ## Service
 
 | Mục | Nội dung |
 |-----|----------|
-| Public URL | https://TODO-thay-bang-url-that.up.railway.app |
-| Platform | Railway / Render / Cloud Run — (điền platform bạn dùng) |
-| Ngày deploy | (điền ngày) |
+| Public URL | https://day12-agent-rm10.onrender.com |
+| Platform | Render |
+| Ngày deploy | 28/9/2026 |
 
 ## Biến Môi Trường Đã Set Trên Cloud
 
@@ -30,50 +30,72 @@ Ghi tên biến và **nguồn giá trị**, không ghi giá trị:
 |------|--------|---------|
 | `PORT` | ✅ | platform tự gán |
 | `AGENT_API_KEY` | ✅ | đặt trong dashboard, không nằm trong repo |
-| `REDIS_URL` | ✅ | (điền: Redis add-on của platform / Upstash / ...) |
+| `REDIS_URL` | ✅ | Render Key Value `day12-redis`, được liên kết qua Blueprint |
 | `RATE_LIMIT_PER_MINUTE` | ✅ | 10 |
 | `MONTHLY_BUDGET_USD` | ✅ | 10.0 |
 | `LOG_LEVEL` | ✅ | INFO |
 
 ## Lệnh Kiểm Tra
 
-Thay `<URL>` bằng Public URL ở trên:
+```powershell
+$baseUrl = "https://day12-agent-rm10.onrender.com"
 
-```bash
 # 1. Liveness — mong đợi 200 {"status":"ok"}
-curl -i <URL>/health
+Invoke-WebRequest -Uri "$baseUrl/health"
 
 # 2. Readiness — mong đợi 200 {"status":"ready"} (đã nối được Redis)
-curl -i <URL>/ready
+Invoke-WebRequest -Uri "$baseUrl/ready"
 
 # 3. Không có API key — mong đợi 401
-curl -i -X POST <URL>/ask \
-  -H "Content-Type: application/json" \
-  -d '{"question":"Hello"}'
+$body = @{ question = "Hello" } | ConvertTo-Json -Compress
+try {
+  Invoke-WebRequest -Uri "$baseUrl/ask" -Method Post `
+    -ContentType "application/json" -Body $body
+} catch {
+  [int]$_.Exception.Response.StatusCode
+}
 
 # 4. Có API key — mong đợi 200 kèm câu trả lời
-curl -i -X POST <URL>/ask \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $AGENT_API_KEY" \
-  -H "X-User-Id: sv-test" \
-  -d '{"question":"Deploy là gì?"}'
+$headers = @{
+  "X-API-Key" = $env:AGENT_API_KEY
+  "X-User-Id" = "sv-test"
+}
+$body = @{ question = "Deploy là gì?" } | ConvertTo-Json -Compress
+Invoke-WebRequest -Uri "$baseUrl/ask" -Method Post `
+  -Headers $headers -ContentType "application/json" -Body $body
 
 # 5. Rate limit — gọi 15 lần, những lần cuối phải trả 429
-for i in $(seq 1 15); do
-  curl -s -o /dev/null -w "%{http_code} " -X POST <URL>/ask \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: $AGENT_API_KEY" \
-    -H "X-User-Id: sv-test" \
-    -d '{"question":"test"}'
-done; echo
+1..15 | ForEach-Object {
+  try {
+    $response = Invoke-WebRequest -Uri "$baseUrl/ask" -Method Post `
+      -Headers $headers -ContentType "application/json" `
+      -Body (@{ question = "test" } | ConvertTo-Json -Compress)
+    $response.StatusCode
+  } catch {
+    if ($_.Exception.Response) {
+      [int]$_.Exception.Response.StatusCode
+    } else {
+      throw
+    }
+  }
+}
 ```
+
+Trước bước 4, đặt `$env:AGENT_API_KEY` trong PowerShell bằng cùng khóa đã cấu hình
+trên Render. Chỉ nhập khóa trong terminal của bạn, không ghi vào file này.
 
 ## Kết Quả Chạy Thật
 
-Dán output của các lệnh trên vào đây:
+Kết quả đã xác nhận trên service công khai:
 
 ```
-(điền output)
+GET /health → HTTP 200
+{"status":"ok","service":"day12-agent","version":"1.0.0"}
+
+GET /ready → HTTP 200
+{"status":"ready","redis":true}
+
+POST /ask không có API key → HTTP 401
 ```
 
 ## Ảnh Chụp Màn Hình
@@ -81,21 +103,4 @@ Dán output của các lệnh trên vào đây:
 Đặt ảnh trong thư mục `screenshots/`:
 
 - `screenshots/dashboard.png` — trang quản lý service trên platform
-- `screenshots/health.png` — kết quả gọi `/health` từ trình duyệt hoặc curl
-
----
-
-## Nếu Dùng Phương Án Dự Phòng
-
-Không đăng ký được tài khoản cloud? Vẫn nộp được bài, nhưng CP5 tối đa 60% điểm:
-
-1. Đặt `LOCAL_FALLBACK=true` trong `.env`
-2. Chạy `docker compose up -d` rồi kiểm tra `docker compose ps`
-3. Chụp màn hình vào `screenshots/`
-4. Chạy `pytest tests/test_cp5.py -v` — bộ test sẽ tự chuyển sang kiểm tra
-   `http://localhost:8000`
-5. Ghi rõ lý do không deploy được vào phần dưới đây:
-
-```
-(điền lý do nếu dùng phương án dự phòng, ngược lại xóa mục này)
-```
+- `screenshots/health.png` — kết quả gọi `/health` từ trình duyệt hoặc PowerShell
